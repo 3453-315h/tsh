@@ -5,7 +5,9 @@ Telegram Shell is a python script that allows to comunicate to your Linux server
 Telegram Shell also allows communication from your Linux server to Telegram.
 
  <br>
+
  -------------------------------
+
 ## Requirements
 - Linux System
 - Bot created from @BotFather via Telegram
