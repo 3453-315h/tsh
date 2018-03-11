@@ -51,6 +51,16 @@ After you finished the installation the python script will run as a system servi
 - /sysinfo - Display generic system information (disk usage, network & memory)
 - /sh - Execute a command with Bash.. example /sh cat namefile , /sh ps auxf | grep ssh
 
+## Send messages from server to Telegram
+
+#### Using sockets
+
+To use the socket from the shell, install socat, then run
+
+```
+echo yourmessage | socat - UNIX-CLIENT:msg.socket
+```
+
 ## Tests
 
 The following scripts are being tested on Debian 8 and marked as working.

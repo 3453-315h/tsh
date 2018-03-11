@@ -7,7 +7,40 @@
 from pprint import pprint
 import telepot,time,os
 import config
+import socket
+import thread
+import fcntl
+import os
+import sys
+import signal
 
+socket_file = 'msg.socket'
+lock_file = 'msg.lock'
+
+def die():
+    os.kill(os.getpid(), signal.SIGINT)
+
+def local_input_loop():
+    # Cleanup socket
+    # Use a separate lockfile to avoid locking the socket
+    # If lockfile can be locked, redo the socket
+    # If lockfile can't be locked, exit with error.
+    lock = open(lock_file, 'w')
+    try:
+        fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError:
+        print('Server is already running')
+        die()
+
+    os.unlink(socket_file)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sock.bind(socket_file)
+    os.chmod(socket_file, 0777)
+    fd = sock.makefile('r')
+    for line in fd:
+        for sender in config.senders:
+            bot.sendMessage(sender, line)
+    
 
 def handle(msg):
     chat_id = msg['chat']['id']
@@ -68,7 +101,7 @@ def handle(msg):
       else:
             bot.sendMessage(chat_id, 'Sorry, this does not seem to be a valid command.')
 
-
+thread.start_new_thread(local_input_loop, ())
 bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)
 
