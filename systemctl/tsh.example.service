@@ -1,0 +1,13 @@
+[Unit]
+Description=TSH Telegram Shell server
+After=network.target
+
+[Service]
+WorkingDirectory=MY-PATH
+ExecStart=MY-PATH/tsh.py
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
