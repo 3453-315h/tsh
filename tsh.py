@@ -13,12 +13,23 @@ import fcntl
 import os
 import sys
 import signal
+from select import select
 
 socket_file = 'msg.socket'
+fifo_file = 'msg.fifo'
 lock_file = 'msg.lock'
+log_file = 'service.log'
 
 def die():
     os.kill(os.getpid(), signal.SIGINT)
+
+def read_and_forward(fdlist):
+    while True:
+        rlist, wlist, xlist = select(fdlist, [], [])
+        for fd in rlist:
+            for line in fd:
+                for sender in config.senders:
+                    bot.sendMessage(sender, line)
 
 def local_input_loop():
     # Cleanup socket
@@ -32,21 +43,31 @@ def local_input_loop():
         print('Server is already running')
         die()
 
+    # init socket
     os.unlink(socket_file)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     sock.bind(socket_file)
     os.chmod(socket_file, 0777)
-    fd = sock.makefile('r')
-    for line in fd:
-        for sender in config.senders:
-            bot.sendMessage(sender, line)
+    fd1 = sock.makefile('r')
+
+    # init fifo
+    try:
+        os.mkfifo(fifo_file, 0777)
+    except OSError, e:
+        if e.errno == os.errno.EEXIST:
+            pass
+    fd2 = open(fifo_file, 'r')
+
+    # read loop
+    read_and_forward([fd1, fd2])
+    
     
 
 def handle(msg):
     chat_id = msg['chat']['id']
     text = msg['text']
     sender = msg['from']['id']
-    f = open('tsh.log', 'a')
+    f = open(log_file, 'a')
     f.write("Chat-id - "+str(chat_id)+" Text - "+str(text)+" Sender - "+str(sender)+"\n")
     f.close()
 
