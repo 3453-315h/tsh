@@ -2,7 +2,7 @@
 
 Telegram Shell is a python script that allows to comunicate to your Linux server via Telegram API (with bots). 
 
-Telegram Shell also allows communication from your Linux server to Telegram.
+Telegram Shell also allows communication from your Linux server to Telegram. Messages can be sent using a FIFO or a socket.
 
  <br>
 
@@ -51,7 +51,16 @@ After you finished the installation the python script will run as a system servi
 - /sysinfo - Display generic system information (disk usage, network & memory)
 - /sh - Execute a command with Bash.. example /sh cat namefile , /sh ps auxf | grep ssh
 
-## Send messages from server to Telegram
+## Send messages from Linux server to Telegram
+
+#### Using FIFO
+
+Send the message to the fifo:
+
+```
+echo yourmessage > msg.fifo
+```
+
 
 #### Using sockets
 
