@@ -3,12 +3,12 @@
 
 import telepot
 from pprint import pprint
-import config
+import tempconfig
 
 
 
 
-bot = telepot.Bot(config.bot_token)
+bot = telepot.Bot(tempconfig.bot_token)
 
 
 response = bot.getUpdates()
