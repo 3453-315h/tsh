@@ -15,7 +15,7 @@ def handle(msg):
     chat_id = msg['chat']['id']
     text = msg['text']
     sender = msg['from']['id']
-    f = open('trsh.log', 'a')
+    f = open('tsh.log', 'a')
     f.write("Chat-id - "+str(chat_id)+" Text - "+str(text)+" Sender - "+str(sender)+"\n")
     f.close()
 

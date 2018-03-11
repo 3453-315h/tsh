@@ -1,9 +1,9 @@
-## TRSH
+## TSH
 
-Telegram Remote-Shell is a python script that allows to comunicate to your Linux server via Telegram API (with bots). 
+Telegram Shell is a python script that allows to comunicate to your Linux server via Telegram API (with bots). 
 
------------------
-![Telegram](/img/telegrambot-img.jpg?raw=true "Telegram")
+Telegram Shell also allows communication from your Linux server to Telegram.
+
  <br>
  -------------------------------
 ## Requirements
@@ -21,10 +21,12 @@ The setup is quite easy: <br>
 * Launch this command on your Linux system: <br>
 
 ```
-cd /home && git clone https://github.com/fnzv/trsh.git && cd trsh && bash install.sh 
+cd /home && git clone https://github.com/simonebaracchi/tsh && cd tsh && bash install.sh 
 ```
 
-##### WARNING: this command will install the required/missing packages ( supervisor, dnsutils, python-pip, python, nmap, mtr, pip-telepot )
+##### WARNING: this command will install the required/missing packages ( dnsutils, python-pip, python, nmap, mtr, pip-telepot )
+
+Installation of pkg supervisor is optional.
 
 ##### NOTES:
 
@@ -49,11 +51,11 @@ After you finished the installation the python script will run as a system servi
 
 ## Tests
 
-The following scripts are being tested on Ubuntu 16.04 LTS, Raspian Jessie and marked as working.
+The following scripts are being tested on Debian 8 and marked as working.
 
 ## Contributors
 
-Feel free to open issues or send me an email
+Please thank fnzv for the original project.
 
 ## License
 
