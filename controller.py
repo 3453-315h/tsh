@@ -6,9 +6,7 @@
 
 from pprint import pprint
 import telepot,time,os
-
-# Telegram senders id
-authorized_senders = [SENDER-ID-LIST]
+import config
 
 
 def handle(msg):
@@ -19,7 +17,7 @@ def handle(msg):
     f.write("Chat-id - "+str(chat_id)+" Text - "+str(text)+" Sender - "+str(sender)+"\n")
     f.close()
 
-    if sender in authorized_senders:
+    if sender in config.senders:
 
       args=text.split()
 
@@ -67,7 +65,7 @@ def handle(msg):
             output=os.popen(cmd).read()
             bot.sendMessage(chat_id, output)
 
-bot = telepot.Bot('TG-BOT-TOKEN')
+bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)
 
 

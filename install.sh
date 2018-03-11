@@ -6,7 +6,7 @@ echo "Enter your Telegram BOT Token: "
 read -sr TG_BOT_TOKEN
 
 
-sed -i s"/TG-BOT-TOKEN/$TG_BOT_TOKEN/" get-sender-id.py
+sed -i s"/MY-TG-BOT-TOKEN/$TG_BOT_TOKEN/" config.py
 
 echo "Trying to find out your Telegram sender-id..\n"
 python get-sender-id.py  | grep "'id'" | uniq -c | awk '{ print $3 }' | sed s'/,//'
@@ -14,10 +14,7 @@ python get-sender-id.py  | grep "'id'" | uniq -c | awk '{ print $3 }' | sed s'/,
 echo "Enter your Telegram Sender ID: "
 read -sr SENDER_ID
 
-sed -i s"/SENDER-ID-LIST/$SENDER_ID/" controller.py
-
-sed -i s"/TG-BOT-TOKEN/$TG_BOT_TOKEN/" controller.py
-
+sed -i s"/MY-SENDER-ID-LIST/$SENDER_ID/" config.py
 
 echo "Configure supervisor? (y/n)"
 read -sr SUPERVISOR

@@ -3,11 +3,12 @@
 
 import telepot
 from pprint import pprint
+import config
 
 
 
 
-bot = telepot.Bot('TG-BOT-TOKEN')
+bot = telepot.Bot(config.bot_token)
 
 
 response = bot.getUpdates()
