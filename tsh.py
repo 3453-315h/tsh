@@ -11,6 +11,7 @@ import socket
 import thread
 import fcntl
 import os
+import glob
 import sys
 import signal
 from select import select
@@ -20,10 +21,19 @@ fifo_file = 'msg.fifo'
 lock_file = 'msg.lock'
 log_file = 'service.log'
 
+local_keywords = []
+
 def die():
     os.kill(os.getpid(), signal.SIGINT)
 
 def read_and_forward(fdlist):
+    """
+    Read from the given list of file descriptors.
+    When a string is available, it is sent to the senders.
+    Enters an infinite loop and never returns.
+
+    fdlist -- list of file descriptors to read from.
+    """
     while True:
         rlist, wlist, xlist = select(fdlist, [], [])
         for fd in rlist:
@@ -32,6 +42,11 @@ def read_and_forward(fdlist):
                     bot.sendMessage(sender, line)
 
 def local_input_loop():
+    """
+    Initialize the local input channels (fifo and socket).
+    Then poll on those and forward messages to Telegram.
+    Never returns.
+    """
     # Cleanup socket
     # Use a separate lockfile to avoid locking the socket
     # If lockfile can be locked, redo the socket
@@ -62,8 +77,18 @@ def local_input_loop():
     read_and_forward([fd1, fd2])
     
     
+def init_keywords():
+    for file in glob.glob('*.sh'):
+        if file in ['install.sh']:
+            continue
+        local_keywords.append(file[:-3])
 
 def handle(msg):
+    """
+    When a message is received, process it.
+
+    msg -- The received message
+    """
     chat_id = msg['chat']['id']
     text = msg['text']
     sender = msg['from']['id']
@@ -76,7 +101,12 @@ def handle(msg):
       args=text.split()
 
       command = args[0]
-      if command == '/ping':
+      if command == '/help':
+            if len(local_keywords) == 0:
+                bot.sendMessage(chat_id, 'No locally defined keywords')
+            else:
+                bot.sendMessage(chat_id, 'Local keywords: ' + ', '.join(local_keywords))
+      elif command == '/ping':
             host = str(args[1])
             output=os.popen("ping -c1 "+host).read()
             bot.sendMessage(chat_id, output)
@@ -119,9 +149,18 @@ def handle(msg):
             output=os.popen(cmd).read()
             bot.sendMessage(chat_id, output)
 
+      elif command[0] == '/' and command[1:] in local_keywords:
+            args[0] = '.' + args[0] + '.sh'
+            output=os.popen(' '.join(args)).read()
+            if len(output) == 0:
+                bot.sendMessage(chat_id, '(no output)')
+            else:
+                bot.sendMessage(chat_id, output)
+
       else:
             bot.sendMessage(chat_id, 'Sorry, this does not seem to be a valid command.')
 
+init_keywords()
 thread.start_new_thread(local_input_loop, ())
 bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)

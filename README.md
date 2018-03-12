@@ -1,8 +1,10 @@
 ## TSH
 
-Telegram Shell is a python script that allows to comunicate to your Linux server via Telegram API (with bots). 
+Telegram Shell is a python script that allows to communicate to your Linux server via Telegram API (with bots). 
 
-Telegram Shell also allows communication from your Linux server to Telegram. Messages can be sent using a FIFO or a socket.
+  - Some builtin commands are included for easier access.
+  - More commands can be added by placing shellscripts (.sh) in tsh folder.
+  - Messages can be sent from Linux to Telegram by sending strings to tsh FIFO or socket.
 
  <br>
 
@@ -28,8 +30,6 @@ cd /home && git clone https://github.com/simonebaracchi/tsh && cd tsh && bash in
 
 ##### WARNING: this command will install the required/missing packages ( dnsutils, python-pip, python, nmap, mtr, pip-telepot )
 
-Installation of pkg supervisor is optional.
-
 ##### NOTES:
 
 - You will be asked to insert your Telegram Bot Token aquired on the first step. <br>
@@ -38,10 +38,11 @@ Installation of pkg supervisor is optional.
 
 - If you cannot figure out how to find your Sender-id manually launch the script get-sender-id.py from commandline and you will get a raw output containing chat_id,sender_id,username,type <br>
 
-After you finished the installation the python script will run as a system service with supervisor.
+Installer will ask if you wish to configure tsh as a system service via systemd or supervisor. If you choose supervisor and it is missing, it will be installed.
 
 ## Usage
 
+- /help - List locally defined commands
 - /ping - Tests connectivity 
 - /dig - Resolve the given domain, supports RR.. example /dig A google.com or /dig MX google.com
 - /mtr - Execute a mtr with a following report
@@ -49,7 +50,23 @@ After you finished the installation the python script will run as a system servi
 - /curl - Execute a curl request
 - /whois - Whois lookup
 - /sysinfo - Display generic system information (disk usage, network & memory)
-- /sh - Execute a command with Bash.. example /sh cat namefile , /sh ps auxf | grep ssh
+- /sh - Execute a command in Bash, for example /sh cat namefile , /sh ps auxf | grep ssh
+
+## Adding commands
+
+Add shellscripts in tsh folder. The new command will have the same name as the shellscript (minus the .sh extension).
+Filename must end in ".sh".
+
+```
+cat > test.sh << 'EOF'
+echo This is a tsh test command!
+echo You sent those arguments: $@
+EOF
+chmod +x test.sh
+```
+
+then restart the tsh service. The "/test" command will be available.
+
 
 ## Send messages from Linux server to Telegram
 
@@ -64,6 +81,7 @@ echo yourmessage > msg.fifo
 
 #### Using sockets
 
+Sockets won't block if the service is not running, but are less comfortable to use from the shell.
 To use the socket from the shell, install socat, then run
 
 ```
