@@ -67,7 +67,10 @@ def local_input_loop():
 
     # init fifo
     try:
+        os.unlink(fifo_file)
+        oldmask = os.umask(0)
         os.mkfifo(fifo_file, 0777)
+        os.umask(oldmask)
     except OSError, e:
         if e.errno == os.errno.EEXIST:
             pass
