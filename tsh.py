@@ -26,26 +26,62 @@ local_keywords = []
 def die():
     os.kill(os.getpid(), signal.SIGINT)
 
-def read_and_forward(fdlist):
+def read_and_forward(fd):
     """
-    Read from the given list of file descriptors.
+    Read from the given file descriptor.
     When a string is available, it is sent to the senders.
-    Enters an infinite loop and never returns.
+    Waits efficiently(!) until a string is available.
+    Note to self. All implementations of select() and poll() 
+        on FIFOs in Python are broken. All. Of. Them.
+        The only workaround is closing and reopening the fd.
 
-    fdlist -- list of file descriptors to read from.
+    fd -- file descriptor to read from.
     """
+    rlist, wlist, xlist = select([fd], [], [])
+    for line in fd:
+        for sender in config.senders:
+            bot.sendMessage(sender, line)
+
+def read_socket():
+    """
+    Read messages from the socket.
+    """
+    # init socket
+    try:
+        os.unlink(socket_file)
+    except OSError, e:
+        if e.errno == os.errno.ENOENT:
+            pass
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     while True:
-        rlist, wlist, xlist = select(fdlist, [], [])
-        for fd in rlist:
-            for line in fd:
-                for sender in config.senders:
-                    bot.sendMessage(sender, line)
+        sock.bind(socket_file)
+        os.chmod(socket_file, 0777)
+        fd = sock.makefile('r')
+        read_and_forward(fd)
+        fd.close()
+
+def read_fifo():
+    """
+    Read messages from the FIFO.
+    """
+    # init fifo
+    try:
+        os.unlink(fifo_file)
+    except OSError, e:
+        if e.errno == os.errno.ENOENT:
+            pass
+    oldmask = os.umask(0)
+    os.mkfifo(fifo_file, 0777)
+    os.umask(oldmask)
+    while True:
+        fd = open(fifo_file, 'r')
+        read_and_forward(fd)
+        fd.close()
 
 def local_input_loop():
     """
     Initialize the local input channels (fifo and socket).
     Then poll on those and forward messages to Telegram.
-    Never returns.
     """
     # Cleanup socket
     # Use a separate lockfile to avoid locking the socket
@@ -58,26 +94,9 @@ def local_input_loop():
         print('Server is already running')
         die()
 
-    # init socket
-    os.unlink(socket_file)
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    sock.bind(socket_file)
-    os.chmod(socket_file, 0777)
-    fd1 = sock.makefile('r')
+    thread.start_new_thread(read_socket, ())
+    thread.start_new_thread(read_fifo, ())
 
-    # init fifo
-    try:
-        os.unlink(fifo_file)
-        oldmask = os.umask(0)
-        os.mkfifo(fifo_file, 0777)
-        os.umask(oldmask)
-    except OSError, e:
-        if e.errno == os.errno.EEXIST:
-            pass
-    fd2 = open(fifo_file, 'r')
-
-    # read loop
-    read_and_forward([fd1, fd2])
     
     
 def init_keywords():
@@ -164,7 +183,7 @@ def handle(msg):
             bot.sendMessage(chat_id, 'Sorry, this does not seem to be a valid command.')
 
 init_keywords()
-thread.start_new_thread(local_input_loop, ())
+local_input_loop()
 bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)
 
