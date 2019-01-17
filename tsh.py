@@ -112,16 +112,18 @@ def handle(msg):
     msg -- The received message
     """
     chat_id = msg['chat']['id']
-    text = msg['text']
+    text = msg['text'].encode('ascii','ignore')
     sender = msg['from']['id']
+
+    # avoid logging and processing every single message.
+    if text[0] != '/':
+        return
     f = open(log_file, 'a')
-    f.write("Chat-id - "+str(chat_id)+" Text - "+str(text)+" Sender - "+str(sender)+"\n")
+    f.write("Chat-id - "+str(chat_id)+" Text - "+text+" Sender - "+str(sender)+"\n")
     f.close()
 
     if sender in config.senders:
-
       args=text.split()
-
       command = args[0]
       if command == '/help':
             if len(local_keywords) == 0:
