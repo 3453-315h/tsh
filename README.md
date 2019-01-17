@@ -75,6 +75,8 @@ then restart the tsh service. The "/test" command will be available.
 
 ## Send messages from Linux server to Telegram
 
+By default, messages will be sent to the bot owner. You can change where they are sent with `/listchat` and `/redirect`.
+
 #### Using FIFO
 
 Send the message to the fifo:
