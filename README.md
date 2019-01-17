@@ -52,6 +52,11 @@ Installer will ask if you wish to configure tsh as a system service via systemd 
 - /sysinfo - Display generic system information (disk usage, network & memory)
 - /sh - Execute a command in Bash, for example /sh cat namefile , /sh ps auxf | grep ssh
 
+Admin tools:
+
+- /listchat - List all known chats the bot is in (and also chat idxs)
+- /redirect `<chat idx>` - Change the destination of FIFO/socket messages to another chat
+
 ## Adding commands
 
 Add shellscripts in tsh folder. The new command will have the same name as the shellscript (minus the .sh extension).

@@ -14,6 +14,8 @@ import os
 import glob
 import sys
 import signal
+import sqlite3
+import json
 from select import select
 
 socket_file = 'msg.socket'
@@ -22,11 +24,59 @@ lock_file = 'msg.lock'
 log_file = 'service.log'
 
 local_keywords = []
+all_chats = []
+
+class Chat:
+    def __init__(self, id, type, name):
+        self.id = id
+        self.type = type
+        self.name = name
+    def __eq__(self, other):
+        return self.id == other.id
 
 def die():
     os.kill(os.getpid(), signal.SIGINT)
 
-def read_and_forward(fd):
+def fatal(msg):
+    print(msg)
+    die()
+
+def db_init():
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    try:
+        query = c.execute('''SELECT count(*) FROM sqlite_master WHERE type='table' AND name='MessageTarget' ''')
+        result = query.fetchone()
+        if result[0] == 0:
+            print('Initializing database...')
+            c.execute('''CREATE TABLE IF NOT EXISTS MessageTarget (source text primary key, destination text)''')
+            c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', ('msg.fifo', json.dumps(config.senders)))
+            c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', ('msg.socket', json.dumps(config.senders)))
+        else:
+            print('Loading configuration...')
+    except:
+        fatal('failed to initialize database')
+    db_connection.commit()
+    db_connection.close()
+
+def db_get_target(source):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    query = c.execute('''SELECT destination FROM MessageTarget WHERE source=?''', (source,))
+    result = query.fetchone()
+    ret = json.loads(result[0])
+    db_connection.close()
+    return ret
+
+def db_redirect_target(source, target):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''INSERT OR REPLACE INTO MessageTarget (source, destination) VALUES (?, ?)''', (source, json.dumps(target)))
+    db_connection.commit()
+    db_connection.close()
+    
+
+def read_and_forward(source, fd):
     """
     Read from the given file descriptor.
     When a string is available, it is sent to the senders.
@@ -35,11 +85,12 @@ def read_and_forward(fd):
         on FIFOs in Python are broken. All. Of. Them.
         The only workaround is closing and reopening the fd.
 
+    index -- the resource I'm reading from. Used to compute the destination.
     fd -- file descriptor to read from.
     """
     rlist, wlist, xlist = select([fd], [], [])
     for line in fd:
-        for sender in config.senders:
+        for sender in db_get_target(source):
             bot.sendMessage(sender, line)
 
 def read_socket():
@@ -57,7 +108,7 @@ def read_socket():
         sock.bind(socket_file)
         os.chmod(socket_file, 0777)
         fd = sock.makefile('r')
-        read_and_forward(fd)
+        read_and_forward(socket_file, fd)
         fd.close()
 
 def read_fifo():
@@ -75,7 +126,7 @@ def read_fifo():
     os.umask(oldmask)
     while True:
         fd = open(fifo_file, 'r')
-        read_and_forward(fd)
+        read_and_forward(fifo_file, fd)
         fd.close()
 
 def local_input_loop():
@@ -87,6 +138,7 @@ def local_input_loop():
     # Use a separate lockfile to avoid locking the socket
     # If lockfile can be locked, redo the socket
     # If lockfile can't be locked, exit with error.
+    print('Entering read loop.')
     lock = open(lock_file, 'w')
     try:
         fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -114,6 +166,12 @@ def handle(msg):
     chat_id = msg['chat']['id']
     text = msg['text'].encode('ascii','ignore')
     sender = msg['from']['id']
+
+    # add chat to list of all known chats
+    this_chat = Chat(chat_id, msg['chat']['type'],
+        msg['chat']['title'] if 'title' in msg['chat'] else msg['chat']['username'])
+    if this_chat not in all_chats:
+        all_chats.append(this_chat)
 
     # avoid logging and processing every single message.
     if text[0] != '/':
@@ -173,6 +231,26 @@ def handle(msg):
             output=os.popen(cmd).read()
             bot.sendMessage(chat_id, output)
 
+      elif command == '/listchat':
+            targets = {}
+            for target in db_get_target(fifo_file) + db_get_target(socket_file):
+                targets[target] = None
+            output = 'Known chats I\'m in:\n'
+            output += str('\n'.join(['{}: {} ({}) {}'.format(str(i), x.name, x.type, 
+                '(current target)' if x.id in targets else '') 
+                for i,x in enumerate(all_chats)]))
+            bot.sendMessage(chat_id, output)
+
+      elif command == '/redirect':
+            idx = int(args[1])
+            if idx >= len(all_chats):
+                bot.sendMessage(chat_id, 'This chat index is out of the range of known chats.')
+            else:
+                new_chat = all_chats[idx]
+                db_redirect_target(fifo_file, [new_chat.id])
+                db_redirect_target(socket_file, [new_chat.id])
+                bot.sendMessage(chat_id, 'I\'m switching system messages to {} ({}).'.format(new_chat.name, new_chat.type))
+
       elif command[0] == '/' and command[1:] in local_keywords:
             args[0] = '.' + args[0] + '.sh'
             output=os.popen(' '.join(args)).read()
@@ -185,6 +263,7 @@ def handle(msg):
             bot.sendMessage(chat_id, 'Sorry, this does not seem to be a valid command.')
 
 init_keywords()
+db_init()
 local_input_loop()
 bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)
