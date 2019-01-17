@@ -167,7 +167,7 @@ def handle(msg):
 
 
       elif command == '/sh':
-            cmd = str(args[1])
+            cmd = str(' '.join(args[1:]))
             output=os.popen(cmd).read()
             bot.sendMessage(chat_id, output)
 
