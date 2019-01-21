@@ -2,7 +2,7 @@
 # Author: Sami Yessou - samiii@protonmail.com
 # Telegram Remote-Shell
 # Control your Linux System remotely via Telegram API
-# Requirements :  apt-get install -y python python-pip && pip install telepot , dig,mtr,nmap,whois ,a Telegram BOT
+# Requirements :  apt-get install -y python python-pip && pip install telepot
 
 from pprint import pprint
 import telepot,time,os
@@ -16,6 +16,8 @@ import sys
 import signal
 import sqlite3
 import json
+import subprocess
+from threading import Thread, Event
 from select import select
 
 socket_file = 'msg.socket'
@@ -124,7 +126,7 @@ def read_and_forward(source, fd):
         for sender in db_get_target(source):
             if len(line.split()) > 0:
                 log("Sending " + line)
-                bot.sendMessage(sender, line)
+                send(bot, sender, line)
 
 def read_socket():
     """
@@ -194,6 +196,30 @@ def init_keywords():
             continue
         local_keywords.append(file[:-3])
 
+def kill_on_timeout(done, timeout, proc):
+    if not done.wait(timeout):
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+
+def run(command):
+    timeout = 120
+    done = Event()
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+        shell=True, preexec_fn=os.setsid)
+    watcher = Thread(target=kill_on_timeout, args=(done, timeout, proc))
+    watcher.daemon = True
+    watcher.start()
+    data = proc.communicate()
+    done.set()
+    output = data[0]
+    if proc.returncode != 0:
+        output += '(exited with error)'
+    return output
+
+def send(bot, chat_id, msg):
+    if msg == None or len(msg) == 0 or len(msg.split()) == 0:
+        msg = '(no output)'
+    bot.sendMessage(chat_id, msg)
+
 def handle(msg):
     """
     When a message is received, process it.
@@ -223,51 +249,49 @@ def handle(msg):
       command = args[0]
       if command == '/help':
             if len(local_keywords) == 0:
-                bot.sendMessage(chat_id, 'No locally defined keywords')
+                send(bot, chat_id, 'No locally defined keywords')
             else:
-                bot.sendMessage(chat_id, 'Local keywords: ' + ', '.join(local_keywords))
+                send(bot, chat_id, 'Local keywords: ' + ', '.join(local_keywords))
       elif command == '/ping':
             host = str(args[1])
-            output=os.popen("ping -c1 "+host).read()
-            bot.sendMessage(chat_id, output)
+            output = run("ping -c1 "+host)
+            send(bot, chat_id, output)
 
       elif command == '/mtr':
             host = str(args[1])
-            output=os.popen("mtr --report "+host).read()
-            bot.sendMessage(chat_id, output)
+            output = run("mtr --report "+host)
+            send(bot, chat_id, output)
 
       elif command == '/nmap':
             value = str(args[1])
             host = str(args[2])
-            output=os.popen("nmap -A "+value+" "+host).read()
-            bot.sendMessage(chat_id, output)
+            output = run("nmap -A "+value+" "+host)
+            send(bot, chat_id, output)
 
       elif command == '/curl':
             host = str(args[1])
-            output=os.popen("curl -Iv "+host).read()
-            bot.sendMessage(chat_id, output)
+            output = run("curl -Iv "+host)
+            send(bot, chat_id, output)
 
       elif command == '/dig':
             type = str(args[1])
             host = str(args[2])
-            output=os.popen("dig +short "+type+" "+host).read()
-            bot.sendMessage(chat_id, output)
+            output = run("dig +short "+type+" "+host)
+            send(bot, chat_id, output)
 
       elif command == '/whois':
             host = str(args[1])
-            output=os.popen("whois "+host).read()
-            bot.sendMessage(chat_id, output)
-
+            output = run("whois "+host)
+            send(bot, chat_id, output)
 
       elif command == '/sysinfo':
-            output=os.popen("df -h && free -m && netstat -tunlp").read()
-            bot.sendMessage(chat_id, output)
-
+            output = run("df -h && free -m && netstat -tunlp")
+            send(bot, chat_id, output)
 
       elif command == '/sh':
             cmd = str(' '.join(args[1:]))
-            output=os.popen(cmd).read()
-            bot.sendMessage(chat_id, output)
+            output = run(cmd)
+            send(bot, chat_id, output)
 
       elif command == '/listchat':
             db_chat_reload()
@@ -278,28 +302,25 @@ def handle(msg):
             output += str('\n'.join(['{}: {} ({}) {}'.format(str(i), x.name, x.type, 
                 '(current target)' if x.id in targets else '') 
                 for i,x in enumerate(all_chats)]))
-            bot.sendMessage(chat_id, output)
+            send(bot, chat_id, output)
 
       elif command == '/redirect':
             idx = int(args[1])
             if idx >= len(all_chats):
-                bot.sendMessage(chat_id, 'This chat index is out of the range of known chats.')
+                send(bot, chat_id, 'This chat index is out of the range of known chats.')
             else:
                 new_chat = all_chats[idx]
                 db_redirect_target(fifo_file, [new_chat.id])
                 db_redirect_target(socket_file, [new_chat.id])
-                bot.sendMessage(chat_id, 'I\'m switching system messages to {} ({}).'.format(new_chat.name, new_chat.type))
+                send(bot, chat_id, 'I\'m switching system messages to {} ({}).'.format(new_chat.name, new_chat.type))
 
       elif command[0] == '/' and command[1:] in local_keywords:
             args[0] = '.' + args[0] + '.sh'
-            output=os.popen(' '.join(args)).read()
-            if len(output) == 0:
-                bot.sendMessage(chat_id, '(no output)')
-            else:
-                bot.sendMessage(chat_id, output)
+            output = run(' '.join(args))
+            send(bot, chat_id, output)
 
       else:
-            bot.sendMessage(chat_id, 'Sorry, this does not seem to be a valid command.')
+            send(bot, chat_id, 'Sorry, this does not seem to be a valid command.')
 
 init_keywords()
 db_init()
