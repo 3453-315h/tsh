@@ -91,7 +91,9 @@ def read_and_forward(source, fd):
     rlist, wlist, xlist = select([fd], [], [])
     for line in fd:
         for sender in db_get_target(source):
-            bot.sendMessage(sender, line)
+            if len(line.split()) > 0:
+                log("Sending " + line)
+                bot.sendMessage(sender, line)
 
 def read_socket():
     """
@@ -149,7 +151,11 @@ def local_input_loop():
     thread.start_new_thread(read_socket, ())
     thread.start_new_thread(read_fifo, ())
 
-    
+def log(msg):
+    f = open(log_file, 'a')
+    f.write(msg + "\n")
+    f.close()
+    print(msg)
     
 def init_keywords():
     for file in glob.glob('*.sh'):
@@ -166,6 +172,7 @@ def handle(msg):
     chat_id = msg['chat']['id']
     text = msg['text'].encode('ascii','ignore')
     sender = msg['from']['id']
+    username = msg['from']['username']
 
     # add chat to list of all known chats
     this_chat = Chat(chat_id, msg['chat']['type'],
@@ -176,9 +183,12 @@ def handle(msg):
     # avoid logging and processing every single message.
     if text[0] != '/':
         return
-    f = open(log_file, 'a')
-    f.write("Chat-id - "+str(chat_id)+" Text - "+text+" Sender - "+str(sender)+"\n")
-    f.close()
+    chat_name = ''
+    if 'title' in msg['chat']:
+        chat_name = '{} ({})'.format(msg['chat']['title'], username)
+    else:
+        chat_name = username
+    log('chatid {} - cmd {}'.format(chat_name, text))
 
     if sender in config.senders:
       args=text.split()
