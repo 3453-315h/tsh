@@ -41,19 +41,29 @@ def fatal(msg):
     print(msg)
     die()
 
+def db_table_exists(db_connection, table):
+    c = db_connection.cursor()
+    query = c.execute('''SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?''', (table,))
+    result = query.fetchone()
+    if result[0] == 0:
+        return False
+    else:
+        return True
+
 def db_init():
     db_connection = sqlite3.connect('config.db')
-    c = db_connection.cursor()
     try:
-        query = c.execute('''SELECT count(*) FROM sqlite_master WHERE type='table' AND name='MessageTarget' ''')
-        result = query.fetchone()
-        if result[0] == 0:
-            print('Initializing database...')
+        if not db_table_exists(db_connection, 'MessageTarget'):
+            print('Initializing target database...')
+            c = db_connection.cursor()
             c.execute('''CREATE TABLE IF NOT EXISTS MessageTarget (source text primary key, destination text)''')
             c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', ('msg.fifo', json.dumps(config.senders)))
             c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', ('msg.socket', json.dumps(config.senders)))
-        else:
-            print('Loading configuration...')
+        if not db_table_exists(db_connection, 'KnownChats'):
+            print('Initializing chat database...')
+            c = db_connection.cursor()
+            c.execute('''CREATE TABLE IF NOT EXISTS KnownChats (id integer primary key, type text, name text)''')
+        print('Loading configuration...')
     except:
         fatal('failed to initialize database')
     db_connection.commit()
@@ -73,6 +83,27 @@ def db_redirect_target(source, target):
     c = db_connection.cursor()
     c.execute('''INSERT OR REPLACE INTO MessageTarget (source, destination) VALUES (?, ?)''', (source, json.dumps(target)))
     db_connection.commit()
+    db_connection.close()
+
+def db_chat_add(id, type, name):
+    this_chat = Chat(id, type, name)
+    if this_chat in all_chats:
+        return
+    all_chats.append(this_chat)
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''INSERT OR REPLACE INTO KnownChats (id, type, name) VALUES (?, ?, ?)''', (id, type, name))
+    db_connection.commit()
+    db_connection.close()
+
+def db_chat_reload():
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    query = c.execute('''SELECT id,type,name FROM KnownChats''')
+    for chat in query:
+        this_chat = Chat(chat[0], chat[1], chat[2])
+        if this_chat not in all_chats:
+           all_chats.append(this_chat)
     db_connection.close()
     
 
@@ -175,10 +206,7 @@ def handle(msg):
     username = msg['from']['username']
 
     # add chat to list of all known chats
-    this_chat = Chat(chat_id, msg['chat']['type'],
-        msg['chat']['title'] if 'title' in msg['chat'] else msg['chat']['username'])
-    if this_chat not in all_chats:
-        all_chats.append(this_chat)
+    db_chat_add(chat_id, msg['chat']['type'], msg['chat']['title'] if 'title' in msg['chat'] else username)
 
     # avoid logging and processing every single message.
     if text[0] != '/':
@@ -242,6 +270,7 @@ def handle(msg):
             bot.sendMessage(chat_id, output)
 
       elif command == '/listchat':
+            db_chat_reload()
             targets = {}
             for target in db_get_target(fifo_file) + db_get_target(socket_file):
                 targets[target] = None
