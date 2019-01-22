@@ -11,6 +11,7 @@ import socket
 import thread
 import fcntl
 import os
+import stat
 import glob
 import sys
 import signal
@@ -150,15 +151,18 @@ def read_fifo():
     """
     Read messages from the FIFO.
     """
-    # init fifo
-    try:
-        os.unlink(fifo_file)
-    except OSError, e:
-        if e.errno == os.errno.ENOENT:
-            pass
-    oldmask = os.umask(0)
-    os.mkfifo(fifo_file, 0777)
-    os.umask(oldmask)
+    # init fifo.
+    # re-create source only if missing or not a fifo.
+    # note that removing an existing fifo will make writers block indefinitely.
+    if not os.path.isfile(fifo_file) or not stat.S_ISFIFO(os.stat(fifo_file).st_mode):
+        try:
+            os.unlink(fifo_file)
+        except OSError, e:
+            if e.errno == os.errno.ENOENT:
+                pass
+        oldmask = os.umask(0)
+        os.mkfifo(fifo_file, 0777)
+        os.umask(oldmask)
     while True:
         fd = open(fifo_file, 'r')
         read_and_forward(fifo_file, fd)
