@@ -292,6 +292,20 @@ def handle(msg):
             output = run("df -h && free -m && netstat -tunlp")
             send(bot, chat_id, output)
 
+      elif command == '/say':
+            if not args[1].isdigit():
+                send(bot, chat_id, 'Unknown chat id format {}'.format(args[1]))
+                return
+            chat_number = int(args[1])
+            if chat_number < 0 or chat_number >= len(all_chats):
+                send(bot, chat_id, 'Unknown chat id {}'.format(chat_number))
+                return
+            if len(args) < 3:
+                send(bot, chat_id, 'Say what?')
+                return
+            message = str(' '.join(args[2:]))
+            send(bot, all_chats[chat_number].id, message)
+
       elif command == '/sh':
             cmd = str(' '.join(args[1:]))
             output = run(cmd)
@@ -328,6 +342,7 @@ def handle(msg):
 
 init_keywords()
 db_init()
+db_chat_reload()
 local_input_loop()
 bot = telepot.Bot(config.bot_token)
 bot.message_loop(handle)
