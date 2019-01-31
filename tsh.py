@@ -21,10 +21,10 @@ import subprocess
 from threading import Thread, Event
 from select import select
 
-socket_file = 'msg.socket'
-fifo_file = 'msg.fifo'
 lock_file = 'msg.lock'
 log_file = 'service.log'
+restart_fifos = False
+restart_sockets = False
 
 local_keywords = []
 all_chats = []
@@ -73,6 +73,9 @@ def db_init():
     db_connection.close()
 
 def db_target_get(source):
+    """
+    Returns a list of targets for the given source
+    """
     db_connection = sqlite3.connect('config.db')
     c = db_connection.cursor()
     query = c.execute('''SELECT destination FROM MessageTarget WHERE source=?''', (source,))
@@ -81,12 +84,52 @@ def db_target_get(source):
     db_connection.close()
     return ret
 
+def db_target_get_all():
+    """ 
+    Returns a dict of source(string) -> target(list)
+    """
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    query = c.execute('''SELECT source, destination FROM MessageTarget''')
+    sources = {}
+    for source in query:
+        sources[source[0]] = json.loads(source[1])
+    db_connection.close()
+    return sources
+
 def db_target_redirect(source, target):
     db_connection = sqlite3.connect('config.db')
     c = db_connection.cursor()
     c.execute('''INSERT OR REPLACE INTO MessageTarget (source, destination) VALUES (?, ?)''', (source, json.dumps(target)))
     db_connection.commit()
     db_connection.close()
+
+def db_source_add(source):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', (source + '.fifo', json.dumps(config.senders)))
+    c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''', (source + '.socket', json.dumps(config.senders)))
+    db_connection.commit()
+    db_connection.close()
+
+def db_source_del(source):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''DELETE FROM MessageTarget WHERE source=?''', (source + '.fifo',))
+    c.execute('''DELETE FROM MessageTarget WHERE source=?''', (source + '.socket',))
+    db_connection.commit()
+    db_connection.close()
+
+def db_source_get(type):
+    sources = {}
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    query = c.execute('''SELECT source, destination FROM MessageTarget WHERE source LIKE ?''', ('%.{}'.format(type),))
+    for source in query:
+        sources[source[0]] = source[1]
+    db_connection.commit()
+    db_connection.close()
+    return sources
 
 def db_chat_add(id, type, name):
     this_chat = Chat(id, type, name)
@@ -110,7 +153,7 @@ def db_chat_reload():
     db_connection.close()
     
 
-def read_and_forward(source, fd):
+def read_and_forward(fd_dict):
     """
     Read from the given file descriptor.
     When a string is available, it is sent to the senders.
@@ -122,30 +165,51 @@ def read_and_forward(source, fd):
     index -- the resource I'm reading from. Used to compute the destination.
     fd -- file descriptor to read from.
     """
-    rlist, wlist, xlist = select([fd], [], [])
-    for line in fd:
-        for sender in db_target_get(source):
-            if len(line.split()) > 0:
-                log("Sending " + line)
-                send(bot, sender, line)
+    rlist, wlist, xlist = select(fd_dict.keys(), [], [], 1)
+    for fd in rlist:
+        for line in fd:
+            source = fd_dict[fd]
+            for sender in db_target_get(source):
+                if len(line.split()) > 0:
+                    log("Sending " + line)
+                    send(bot, sender, line)
 
 def read_socket():
     """
     Read messages from the socket.
     """
     # init socket
-    try:
-        os.unlink(socket_file)
-    except OSError, e:
-        if e.errno == os.errno.ENOENT:
-            pass
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    global restart_sockets
     while True:
-        sock.bind(socket_file)
-        os.chmod(socket_file, 0777)
-        fd = sock.makefile('r')
-        read_and_forward(socket_file, fd)
-        fd.close()
+        sockets = db_source_get('socket')
+        # cleanup all sockets
+        for socket_file in sockets.keys() + glob.glob('*.socket'):
+            try:
+                os.unlink(socket_file)
+            except OSError, e:
+                if e.errno == os.errno.ENOENT:
+                    pass
+
+        fd_dict = {}
+        open_sockets = []
+        for socket_file in sockets:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(socket_file)
+            os.chmod(socket_file, 0777)
+            fd = sock.makefile(os.O_RDONLY)
+            fd_dict[fd] = socket_file
+            open_sockets.append(sock)
+
+        restart_sockets = False
+        while not restart_sockets:
+            read_and_forward(fd_dict)
+
+        for fd in fd_dict.keys():
+            fd.close()
+        for sock in open_sockets:
+            sock.shutdown(socket.SHUT_RD)
+            sock.close()
 
 def read_fifo():
     """
@@ -154,19 +218,38 @@ def read_fifo():
     # init fifo.
     # re-create source only if missing or not a fifo.
     # note that removing an existing fifo will make writers block indefinitely.
-    if not os.path.isfile(fifo_file) or not stat.S_ISFIFO(os.stat(fifo_file).st_mode):
-        try:
-            os.unlink(fifo_file)
-        except OSError, e:
-            if e.errno == os.errno.ENOENT:
-                pass
-        oldmask = os.umask(0)
-        os.mkfifo(fifo_file, 0777)
-        os.umask(oldmask)
+    global restart_fifos
     while True:
-        fd = open(fifo_file, 'r')
-        read_and_forward(fifo_file, fd)
-        fd.close()
+        fifos = db_source_get('fifo')
+        # cleanup
+        for fifo_file in glob.glob('*.fifo'):
+            if fifo_file not in fifos:
+                try:
+                    os.unlink(fifo_file)
+                except OSError, e:
+                    if e.errno == os.errno.ENOENT:
+                        pass
+        # check fifos
+        for fifo_file in fifos:
+            if not os.path.isfile(fifo_file) or not stat.S_ISFIFO(os.stat(fifo_file).st_mode):
+                try:
+                    os.unlink(fifo_file)
+                except OSError, e:
+                    if e.errno == os.errno.ENOENT:
+                        pass
+                oldmask = os.umask(0)
+                os.mkfifo(fifo_file, 0777)
+                os.umask(oldmask)
+        restart_fifos = False
+        while not restart_fifos:
+            fd_dict = {}
+            for fifo_file in fifos:
+                fd = os.fdopen(os.open(fifo_file, os.O_RDONLY | os.O_NONBLOCK))
+                fd_dict[fd] = fifo_file
+
+            read_and_forward(fd_dict)
+            for fd in fd_dict.keys():
+                fd.close()
 
 def local_input_loop():
     """
@@ -230,6 +313,8 @@ def handle(msg):
 
     msg -- The received message
     """
+    global restart_fifos
+    global restart_sockets
     chat_id = msg['chat']['id']
     text = msg['text'].encode('ascii','ignore')
     sender = msg['from']['id']
@@ -312,25 +397,58 @@ def handle(msg):
             send(bot, chat_id, output)
 
       elif command == '/listchat':
-            db_chat_reload()
+            # sources is source(string) -> destination(list)
+            sources = db_target_get_all()
+            # targets is destination(string) -> source(list)
             targets = {}
-            for target in db_target_get(fifo_file) + db_target_get(socket_file):
-                targets[target] = None
+            for source in sources.keys():
+                for target in sources[source]:
+                    if target not in targets:
+                        targets[target] = []
+                    targets[target].append(source)
+
             output = 'Known chats I\'m in:\n'
-            output += str('\n'.join(['{}: {} ({}) {}'.format(str(i), x.name, x.type, 
-                '(current target)' if x.id in targets else '') 
-                for i,x in enumerate(all_chats)]))
+            for idx, chat in enumerate(all_chats):
+                output += '{}: {} ({})'.format(str(idx), chat.name, chat.type)
+                if chat.id in targets:
+                    output += ' (target of {})'.format(', '.join(targets[chat.id])) 
+                output += '\n'
             send(bot, chat_id, output)
 
       elif command == '/redirect':
-            idx = int(args[1])
-            if idx >= len(all_chats):
-                send(bot, chat_id, 'This chat index is out of the range of known chats.')
-            else:
-                new_chat = all_chats[idx]
-                db_target_redirect(fifo_file, [new_chat.id])
-                db_target_redirect(socket_file, [new_chat.id])
-                send(bot, chat_id, 'I\'m switching system messages to {} ({}).'.format(new_chat.name, new_chat.type))
+            idxs = args[2:]
+            source = args[1]
+            new_target = []
+            for idx in idxs:
+                if int(idx) >= len(all_chats):
+                    send(bot, chat_id, 'This chat index is out of the range of known chats.')
+                else:
+                    new_target.append(all_chats[int(idx)])
+            if len(new_target) > 0:
+                ids = [chat.id for chat in new_target]
+                descr = [chat.name + ' (' + chat.type + ')' for chat in new_target]
+                db_target_redirect(source + '.fifo', ids)
+                db_target_redirect(source + '.socket', ids)
+                send(bot, chat_id, 'I\'m switching messages from {} to {}.'.format(source, ', '.join(descr)))
+
+      elif command == '/sourceadd':
+            source = args[1]
+            if not source.isalnum():
+                send(bot, chat_id, 'The source name is not valid. Please only use letters and numbers.')
+                return
+            db_source_add(source)
+            restart_fifos = True
+            restart_sockets = True
+            send(bot, chat_id, 'Added source {}.'.format(source))
+      elif command == '/sourcedel':
+            if len(args) < 2:
+                send(bot, chat_id, 'Delete what?')
+                return
+            source = args[1]
+            db_source_del(source)
+            restart_fifos = True
+            restart_sockets = True
+            send(bot, chat_id, 'Deleted source {}.'.format(source))
 
       elif command[0] == '/' and command[1:] in local_keywords:
             args[0] = '.' + args[0] + '.sh'
