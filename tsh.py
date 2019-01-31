@@ -72,7 +72,7 @@ def db_init():
     db_connection.commit()
     db_connection.close()
 
-def db_get_target(source):
+def db_target_get(source):
     db_connection = sqlite3.connect('config.db')
     c = db_connection.cursor()
     query = c.execute('''SELECT destination FROM MessageTarget WHERE source=?''', (source,))
@@ -81,7 +81,7 @@ def db_get_target(source):
     db_connection.close()
     return ret
 
-def db_redirect_target(source, target):
+def db_target_redirect(source, target):
     db_connection = sqlite3.connect('config.db')
     c = db_connection.cursor()
     c.execute('''INSERT OR REPLACE INTO MessageTarget (source, destination) VALUES (?, ?)''', (source, json.dumps(target)))
@@ -124,7 +124,7 @@ def read_and_forward(source, fd):
     """
     rlist, wlist, xlist = select([fd], [], [])
     for line in fd:
-        for sender in db_get_target(source):
+        for sender in db_target_get(source):
             if len(line.split()) > 0:
                 log("Sending " + line)
                 send(bot, sender, line)
@@ -200,16 +200,16 @@ def init_keywords():
             continue
         local_keywords.append(file[:-3])
 
-def kill_on_timeout(done, timeout, proc):
+def proc_kill_on_timeout(done, timeout, proc):
     if not done.wait(timeout):
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
-def run(command):
+def proc_run(command):
     timeout = 120
     done = Event()
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
         shell=True, preexec_fn=os.setsid)
-    watcher = Thread(target=kill_on_timeout, args=(done, timeout, proc))
+    watcher = Thread(target=proc_kill_on_timeout, args=(done, timeout, proc))
     watcher.daemon = True
     watcher.start()
     data = proc.communicate()
@@ -258,38 +258,38 @@ def handle(msg):
                 send(bot, chat_id, 'Local keywords: ' + ', '.join(local_keywords))
       elif command == '/ping':
             host = str(args[1])
-            output = run("ping -c1 "+host)
+            output = proc_run("ping -c1 "+host)
             send(bot, chat_id, output)
 
       elif command == '/mtr':
             host = str(args[1])
-            output = run("mtr --report "+host)
+            output = proc_run("mtr --report "+host)
             send(bot, chat_id, output)
 
       elif command == '/nmap':
             value = str(args[1])
             host = str(args[2])
-            output = run("nmap -A "+value+" "+host)
+            output = proc_run("nmap -A "+value+" "+host)
             send(bot, chat_id, output)
 
       elif command == '/curl':
             host = str(args[1])
-            output = run("curl -Iv "+host)
+            output = proc_run("curl -Iv "+host)
             send(bot, chat_id, output)
 
       elif command == '/dig':
             type = str(args[1])
             host = str(args[2])
-            output = run("dig +short "+type+" "+host)
+            output = proc_run("dig +short "+type+" "+host)
             send(bot, chat_id, output)
 
       elif command == '/whois':
             host = str(args[1])
-            output = run("whois "+host)
+            output = proc_run("whois "+host)
             send(bot, chat_id, output)
 
       elif command == '/sysinfo':
-            output = run("df -h && free -m && netstat -tunlp")
+            output = proc_run("df -h && free -m && netstat -tunlp")
             send(bot, chat_id, output)
 
       elif command == '/say':
@@ -308,13 +308,13 @@ def handle(msg):
 
       elif command == '/sh':
             cmd = str(' '.join(args[1:]))
-            output = run(cmd)
+            output = proc_run(cmd)
             send(bot, chat_id, output)
 
       elif command == '/listchat':
             db_chat_reload()
             targets = {}
-            for target in db_get_target(fifo_file) + db_get_target(socket_file):
+            for target in db_target_get(fifo_file) + db_target_get(socket_file):
                 targets[target] = None
             output = 'Known chats I\'m in:\n'
             output += str('\n'.join(['{}: {} ({}) {}'.format(str(i), x.name, x.type, 
@@ -328,13 +328,13 @@ def handle(msg):
                 send(bot, chat_id, 'This chat index is out of the range of known chats.')
             else:
                 new_chat = all_chats[idx]
-                db_redirect_target(fifo_file, [new_chat.id])
-                db_redirect_target(socket_file, [new_chat.id])
+                db_target_redirect(fifo_file, [new_chat.id])
+                db_target_redirect(socket_file, [new_chat.id])
                 send(bot, chat_id, 'I\'m switching system messages to {} ({}).'.format(new_chat.name, new_chat.type))
 
       elif command[0] == '/' and command[1:] in local_keywords:
             args[0] = '.' + args[0] + '.sh'
-            output = run(' '.join(args))
+            output = proc_run(' '.join(args))
             send(bot, chat_id, output)
 
       else:
