@@ -242,14 +242,18 @@ def read_fifo():
                 os.umask(oldmask)
         restart_fifos = False
         while not restart_fifos:
-            fd_dict = {}
+            fo_dict = {}
             for fifo_file in fifos:
-                fd = os.fdopen(os.open(fifo_file, os.O_RDONLY | os.O_NONBLOCK))
-                fd_dict[fd] = fifo_file
+                fd = os.open(fifo_file, os.O_RDONLY | os.O_NONBLOCK)
+                fo = os.fdopen(fd)
+                fo_dict[fo] = fifo_file
 
-            read_and_forward(fd_dict)
-            for fd in fd_dict.keys():
-                fd.close()
+            try:
+                read_and_forward(fo_dict)
+            except IOError:
+                pass
+            for fo in fo_dict.keys():
+                fo.close()
 
 def local_input_loop():
     """
