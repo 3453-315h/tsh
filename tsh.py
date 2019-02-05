@@ -11,6 +11,7 @@ import socket
 import thread
 import fcntl
 import os
+import re
 import stat
 import glob
 import sys
@@ -401,15 +402,18 @@ def handle(msg):
             send(bot, chat_id, output)
 
       elif command == '/listchat':
-            # sources is source(string) -> destination(list)
+            # sources is source(string) -> destination(list of id)
             sources = db_target_get_all()
-            # targets is destination(string) -> source(list)
+            # targets is destination(string) -> source(list of id)
             targets = {}
             for source in sources.keys():
                 for target in sources[source]:
+                    source_name = re.sub('\.fifo$', '', source)
+                    source_name = re.sub('\.socket$', '', source_name)
                     if target not in targets:
                         targets[target] = []
-                    targets[target].append(source)
+                    if source_name not in targets[target]:
+                        targets[target].append(source_name)
 
             output = 'Known chats I\'m in:\n'
             for idx, chat in enumerate(all_chats):
