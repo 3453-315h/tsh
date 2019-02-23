@@ -1,10 +1,12 @@
-## TSH
+## tsh
 
-Telegram Shell is a python script that allows your Linux server to communicate via Telegram using a Telegram bot, and allows commands to be sent from Telegram to Linux.
+Telegram Shell (tsh) is a python script that allows your Linux server to communicate via Telegram, by using a Telegram bot.
 
-  - Some builtin commands are included for easier access.
+tsh helps bridging your beloved UNIX command line tools and your mobile phone. It will allow communications in both ways, by enabling you to send messages from your Linux system to Telegram, and to send commands from Telegram to Linux.
+
+  - Some builtin commands are included for easier access (ping, nmap, etc).
   - More commands can be added by placing shellscripts (.sh) in tsh folder.
-  - Messages can be sent from Linux to Telegram by sending strings to tsh FIFO or socket.
+  - Messages can be sent from Linux to Telegram by sending strings to tsh FIFO or socket (as simple as `echo message > msg.fifo`).
 
  <br>
 
@@ -44,11 +46,11 @@ Installer will ask if you wish to configure tsh as a system service via systemd 
 
 ### Messaging tools
 
-- /listchat - List all known chats the bot is in (and also chat idxs)
-- /redirect `<source>` `<chat idx> [<chat idx...>]` - Change the destination of FIFO/socket messages to another chat
+- /listchat - List all known chats the bot is in (and also chat IDs)
+- /redirect `<source>` `<chat id> [<chat id...>]` - Change the destination of FIFO/socket messages to another chat
 - /sourceadd `<name>` - Add a new fifo/socket to read from, with the specified name
 - /sourcedel `<name>` - Delete the specified fifo/socket
-- /say `<chat idx>` `<message>` - Make the bot say something on a chat
+- /say `<chat id>` `<message>` - Make the bot say something on a chat
 
 ### Linux tools
 
