@@ -307,6 +307,16 @@ def proc_run(command):
         output += '(exited with error)'
     return output
 
+def get_value_from(entry, value, default):
+    if isinstance(value, list):
+        for attempt in value:
+            if attempt in entry:
+                return entry[attempt]
+    elif isinstance(value, str):
+        if value in entry:
+            return entry[value]
+    return default
+
 def send(bot, chat_id, msg):
     if msg == None or len(msg) == 0 or len(msg.split()) == 0:
         msg = '(no output)'
@@ -323,7 +333,7 @@ def handle(msg):
     chat_id = msg['chat']['id']
     text = msg['text'].encode('ascii','ignore')
     sender = msg['from']['id']
-    username = msg['from']['username']
+    username = get_value_from(msg['from'], ['username', 'first_name', 'id'], 'unknown-user-id')
 
     # add chat to list of all known chats
     db_chat_add(chat_id, msg['chat']['type'], msg['chat']['title'] if 'title' in msg['chat'] else username)
