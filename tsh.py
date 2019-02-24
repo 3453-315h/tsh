@@ -332,7 +332,7 @@ def handle(msg):
     global restart_fifos
     global restart_sockets
     chat_id = msg['chat']['id']
-    text = msg['text'].encode('ascii','ignore')
+    text = msg['text'].encode('ascii','ignore') if 'text' in msg else 'unknown text'
     sender = msg['from']['id']
     username = get_value_from(msg['from'], ['username', 'first_name', 'id'], 'unknown-user-id')
 
