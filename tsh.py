@@ -321,7 +321,8 @@ def get_value_from(entry, value, default):
 def send(bot, chat_id, msg):
     if msg == None or len(msg) == 0 or len(msg.split()) == 0:
         msg = '(no output)'
-    bot.sendMessage(chat_id, msg)
+    disablepreview = not config.url_preview
+    bot.sendMessage(chat_id, msg, disable_web_page_preview=disablepreview)
 
 def handle(msg):
     """

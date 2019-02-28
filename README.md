@@ -64,6 +64,10 @@ Installer will ask if you wish to configure tsh as a system service via systemd 
 - /sysinfo - Display generic system information (disk usage, network & memory)
 - /sh - Execute a command in Bash, for example /sh cat namefile , /sh ps auxf | grep ssh
 
+### Further configuration
+
+URL previews can be disabled by setting `url_preview` to `False` in config.py.
+
 ## Adding custom commands
 
 Add shellscripts in tsh folder. The new command will have the same name as the shellscript (minus the .sh extension).
