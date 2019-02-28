@@ -22,7 +22,7 @@ import subprocess
 from threading import Thread, Event
 from select import select
 
-os.chdir(os.path.dirname(sys.argv[0]))
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 lock_file = 'msg.lock'
 log_file = 'service.log'
 restart_fifos = False
