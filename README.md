@@ -52,6 +52,14 @@ Installer will ask if you wish to configure tsh as a system service via systemd 
 - /sourcedel `<name>` - Delete the specified fifo/socket
 - /say `<chat id>` `<message>` - Make the bot say something on a chat
 
+### Access control tools
+
+By default, only the administrator is allowed to run commands, but you can allow other users to run specific commands:
+
+- /rolelist `<username>` - list all commands the user is allowed to run
+- /roleadd `<username>` `<command>` - allow the user to use the specified command
+- /roledel `<username>` `<command>` - remove the command from the allowed ones
+
 ### Linux tools
 
 - /help - List locally defined commands (custom shellscripts)

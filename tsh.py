@@ -75,9 +75,9 @@ def db_table_exists(db_connection, table):
 def db_init():
     db_connection = sqlite3.connect('config.db')
     try:
+        c = db_connection.cursor()
         if not db_table_exists(db_connection, 'MessageTarget'):
             print 'Initializing target database...'
-            c = db_connection.cursor()
             c.execute('''CREATE TABLE IF NOT EXISTS MessageTarget (source text primary key, destination text)'''
                       )
             c.execute('''INSERT INTO MessageTarget VALUES (?, ?)''',
@@ -86,12 +86,13 @@ def db_init():
                       ('msg.socket', json.dumps(config.senders)))
         if not db_table_exists(db_connection, 'KnownChats'):
             print 'Initializing chat database...'
-            c = db_connection.cursor()
             c.execute('''CREATE TABLE IF NOT EXISTS KnownChats (id integer primary key, type text, name text)'''
                       )
+        if not db_table_exists(db_connection, 'Roles'):
+            c.execute('''CREATE TABLE IF NOT EXISTS Roles (username text, command text, PRIMARY KEY(username, command))''')
         print 'Loading configuration...'
-    except:
-        fatal('failed to initialize database')
+    except Exception, e:
+        fatal('failed to initialize database: ' + str(e))
     db_connection.commit()
     db_connection.close()
 
@@ -195,7 +196,30 @@ def db_chat_reload():
         if this_chat not in all_chats:
             all_chats.append(this_chat)
     db_connection.close()
+    
+def db_role_add(user, command):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''INSERT OR REPLACE INTO Roles (username, command) VALUES (?, ?)''', (user, command))
+    db_connection.commit()
+    db_connection.close()
 
+def db_role_del(user, command):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    c.execute('''DELETE FROM Roles WHERE username=? AND command=?''', (user, command))
+    db_connection.commit()
+    db_connection.close()
+
+def db_role_list(user):
+    db_connection = sqlite3.connect('config.db')
+    c = db_connection.cursor()
+    query = c.execute('''SELECT command FROM Roles WHERE username=?''', (user, ))
+    ret = []
+    for cmd in query:
+        ret.append(cmd[0])
+    db_connection.close()
+    return ret
 
 def read_and_forward(fd_dict):
     """
@@ -425,149 +449,177 @@ def handle(msg):
         chat_name = username
     log('chatid {} - cmd {}'.format(chat_name, text))
 
-    if sender in config.senders:
-        args = text.split()
-        command = args[0]
-        if command == '/help':
-            if len(local_keywords) == 0:
-                send(bot, chat_id, 'No locally defined keywords')
-            else:
-                send(bot, chat_id, 'Local keywords: '
-                     + ', '.join(local_keywords))
-        elif command == '/ping':
-            host = str(args[1])
-            output = proc_run('ping -c1 ' + host)
-            send(bot, chat_id, output)
-        elif command == '/mtr':
+    args = text.split()
+    command = args[0]
+    if sender is None or (sender not in config.senders and command[1:] not in db_role_list(username)):
+        return
 
-            host = str(args[1])
-            output = proc_run('mtr --report ' + host)
-            send(bot, chat_id, output)
-        elif command == '/nmap':
-
-            value = str(args[1])
-            host = str(args[2])
-            output = proc_run('nmap -A ' + value + ' ' + host)
-            send(bot, chat_id, output)
-        elif command == '/curl':
-
-            host = str(args[1])
-            output = proc_run('curl -Iv ' + host)
-            send(bot, chat_id, output)
-        elif command == '/dig':
-
-            type = str(args[1])
-            host = str(args[2])
-            output = proc_run('dig +short ' + type + ' ' + host)
-            send(bot, chat_id, output)
-        elif command == '/whois':
-
-            host = str(args[1])
-            output = proc_run('whois ' + host)
-            send(bot, chat_id, output)
-        elif command == '/sysinfo':
-
-            output = proc_run('df -h && free -m && netstat -tunlp')
-            send(bot, chat_id, output)
-        elif command == '/say':
-
-            if not args[1].isdigit():
-                send(bot, chat_id,
-                     'Unknown chat id format {}'.format(args[1]))
-                return
-            chat_number = int(args[1])
-            if chat_number < 0 or chat_number >= len(all_chats):
-                send(bot, chat_id,
-                     'Unknown chat id {}'.format(chat_number))
-                return
-            if len(args) < 3:
-                send(bot, chat_id, 'Say what?')
-                return
-            message = str(' '.join(args[2:]))
-            send(bot, all_chats[chat_number].id, message)
-        elif command == '/sh':
-
-            cmd = str(' '.join(args[1:]))
-            output = proc_run(cmd)
-            send(bot, chat_id, output)
-        elif command == '/listchat':
-
-            # sources is source(string) -> destination(list of id)
-
-            sources = db_target_get_all()
-
-            # targets is destination(string) -> source(list of id)
-
-            targets = {}
-            for source in sources.keys():
-                for target in sources[source]:
-                    source_name = re.sub('\.fifo$', '', source)
-                    source_name = re.sub('\.socket$', '', source_name)
-                    if target not in targets:
-                        targets[target] = []
-                    if source_name not in targets[target]:
-                        targets[target].append(source_name)
-
-            output = 'Known chats I\'m in:\n'
-            for (idx, chat) in enumerate(all_chats):
-                output += '{}: {} ({})'.format(str(idx), chat.name,
-                        chat.type)
-                if chat.id in targets:
-                    output += \
-                        ' (target of {})'.format(', '.join(targets[chat.id]))
-                output += '\n'
-            send(bot, chat_id, output)
-        elif command == '/redirect':
-
-            idxs = args[2:]
-            source = args[1]
-            new_target = []
-            for idx in idxs:
-                if int(idx) >= len(all_chats):
-                    send(bot, chat_id,
-                         'This chat index is out of the range of known chats.'
-                         )
-                else:
-                    new_target.append(all_chats[int(idx)])
-            if len(new_target) > 0:
-                ids = [chat.id for chat in new_target]
-                descr = [chat.name + ' (' + chat.type + ')' for chat in
-                         new_target]
-                db_target_redirect(source + '.fifo', ids)
-                db_target_redirect(source + '.socket', ids)
-                send(bot, chat_id,
-                     'I\'m switching messages from {} to {}.'.format(source,
-                     ', '.join(descr)))
-        elif command == '/sourceadd':
-
-            source = args[1]
-            if not source.isalnum():
-                send(bot, chat_id,
-                     'The source name is not valid. Please only use letters and numbers.'
-                     )
-                return
-            db_source_add(source)
-            restart_fifos = True
-            restart_sockets = True
-            send(bot, chat_id, 'Added source {}.'.format(source))
-        elif command == '/sourcedel':
-            if len(args) < 2:
-                send(bot, chat_id, 'Delete what?')
-                return
-            source = args[1]
-            db_source_del(source)
-            restart_fifos = True
-            restart_sockets = True
-            send(bot, chat_id, 'Deleted source {}.'.format(source))
-        elif command[0] == '/' and command[1:] in local_keywords:
-
-            args[0] = '.' + args[0] + '.sh'
-            output = proc_run(' '.join(args))
-            send(bot, chat_id, output)
+    if command == '/help':
+        if len(local_keywords) == 0:
+            send(bot, chat_id, 'No locally defined keywords')
         else:
+            send(bot, chat_id, 'Local keywords: '
+                 + ', '.join(local_keywords))
+    elif command == '/ping':
+        host = str(args[1])
+        output = proc_run('ping -c1 ' + host)
+        send(bot, chat_id, output)
+    elif command == '/mtr':
 
+        host = str(args[1])
+        output = proc_run('mtr --report ' + host)
+        send(bot, chat_id, output)
+    elif command == '/nmap':
+
+        value = str(args[1])
+        host = str(args[2])
+        output = proc_run('nmap -A ' + value + ' ' + host)
+        send(bot, chat_id, output)
+    elif command == '/curl':
+
+        host = str(args[1])
+        output = proc_run('curl -Iv ' + host)
+        send(bot, chat_id, output)
+    elif command == '/dig':
+
+        type = str(args[1])
+        host = str(args[2])
+        output = proc_run('dig +short ' + type + ' ' + host)
+        send(bot, chat_id, output)
+    elif command == '/whois':
+
+        host = str(args[1])
+        output = proc_run('whois ' + host)
+        send(bot, chat_id, output)
+    elif command == '/sysinfo':
+
+        output = proc_run('df -h && free -m && netstat -tunlp')
+        send(bot, chat_id, output)
+    elif command == '/say':
+
+        if not args[1].isdigit():
             send(bot, chat_id,
-                 'Sorry, this does not seem to be a valid command.')
+                 'Unknown chat id format {}'.format(args[1]))
+            return
+        chat_number = int(args[1])
+        if chat_number < 0 or chat_number >= len(all_chats):
+            send(bot, chat_id,
+                 'Unknown chat id {}'.format(chat_number))
+            return
+        if len(args) < 3:
+            send(bot, chat_id, 'Say what?')
+            return
+        message = str(' '.join(args[2:]))
+        send(bot, all_chats[chat_number].id, message)
+    elif command == '/sh':
+
+        cmd = str(' '.join(args[1:]))
+        output = proc_run(cmd)
+        send(bot, chat_id, output)
+    elif command == '/listchat':
+
+        # sources is source(string) -> destination(list of id)
+
+        sources = db_target_get_all()
+
+        # targets is destination(string) -> source(list of id)
+
+        targets = {}
+        for source in sources.keys():
+            for target in sources[source]:
+                source_name = re.sub('\.fifo$', '', source)
+                source_name = re.sub('\.socket$', '', source_name)
+                if target not in targets:
+                    targets[target] = []
+                if source_name not in targets[target]:
+                    targets[target].append(source_name)
+
+        output = 'Known chats I\'m in:\n'
+        for (idx, chat) in enumerate(all_chats):
+            output += '{}: {} ({})'.format(str(idx), chat.name,
+                    chat.type)
+            if chat.id in targets:
+                output += \
+                    ' (target of {})'.format(', '.join(targets[chat.id]))
+            output += '\n'
+        send(bot, chat_id, output)
+    elif command == '/redirect':
+
+        idxs = args[2:]
+        source = args[1]
+        new_target = []
+        for idx in idxs:
+            if int(idx) >= len(all_chats):
+                send(bot, chat_id,
+                     'This chat index is out of the range of known chats.'
+                     )
+            else:
+                new_target.append(all_chats[int(idx)])
+        if len(new_target) > 0:
+            ids = [chat.id for chat in new_target]
+            descr = [chat.name + ' (' + chat.type + ')' for chat in
+                     new_target]
+            db_target_redirect(source + '.fifo', ids)
+            db_target_redirect(source + '.socket', ids)
+            send(bot, chat_id,
+                 'I\'m switching messages from {} to {}.'.format(source,
+                 ', '.join(descr)))
+    elif command == '/sourceadd':
+
+        source = args[1]
+        if not source.isalnum():
+            send(bot, chat_id,
+                 'The source name is not valid. Please only use letters and numbers.'
+                 )
+            return
+        db_source_add(source)
+        restart_fifos = True
+        restart_sockets = True
+        send(bot, chat_id, 'Added source {}.'.format(source))
+    elif command == '/sourcedel':
+        if len(args) < 2:
+            send(bot, chat_id, 'Delete what?')
+            return
+        source = args[1]
+        db_source_del(source)
+        restart_fifos = True
+        restart_sockets = True
+        send(bot, chat_id, 'Deleted source {}.'.format(source))
+
+    elif command == '/roleadd':
+        if len(args) < 3:
+            send(bot, chat_id, 'Use /roleadd <user> <command>')
+            return
+        user = args[1]
+        command = args[2]
+        db_role_add(user, command)
+        send(bot, chat_id, 'Added command {} for user {}.'.format(command, user))
+        
+    elif command == '/roledel':
+        if len(args) < 3:
+            send(bot, chat_id, 'Use /roledel <user> <command>')
+            return
+        user = args[1]
+        command = args[2]
+        db_role_del(user, command)
+        send(bot, chat_id, 'Removed command {} for user {}.'.format(command, user))
+
+    elif command == '/rolelist':
+        if len(args) < 2:
+            send(bot, chat_id, 'Use /rolelist <user>')
+            return
+        user = args[1]
+        commands = db_role_list(user)
+        send(bot, chat_id, 'Commands for user {}: {}.'.format(user, ', '.join(commands)))
+
+    elif command[0] == '/' and command[1:] in local_keywords:
+        args[0] = '.' + args[0] + '.sh'
+        output = proc_run(' '.join(args))
+        send(bot, chat_id, output)
+    else:
+
+        send(bot, chat_id,
+             'Sorry, this does not seem to be a valid command.')
 
 
 init_keywords()
