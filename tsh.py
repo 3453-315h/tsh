@@ -212,6 +212,8 @@ def db_role_del(user, command):
     db_connection.close()
 
 def db_role_list(user):
+    if user is None:
+        return []
     db_connection = sqlite3.connect('config.db')
     c = db_connection.cursor()
     query = c.execute('''SELECT command FROM Roles WHERE username=?''', (user, ))
@@ -430,6 +432,7 @@ def handle(msg):
     text = (msg['text'].encode('ascii', 'ignore') if 'text'
             in msg else 'unknown text')
     sender = msg['from']['id']
+    real_username = msg['from']['username'] if 'username' in msg['from'] else None;
     username = get_value_from(msg['from'], ['username', 'first_name',
                               'id'], 'unknown-user-id')
 
@@ -451,7 +454,7 @@ def handle(msg):
 
     args = text.split()
     command = args[0]
-    if sender is None or (sender not in config.senders and command[1:] not in db_role_list(username)):
+    if sender is None or (sender not in config.senders and command[1:] not in db_role_list(real_username)):
         return
 
     if command == '/help':
